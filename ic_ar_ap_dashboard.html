@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Intercompany AR/AP Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;background:#f1f5f9;color:#0f172a;font-size:13px}
+header{background:linear-gradient(90deg,#1e3a8a,#3730a3);color:#fff;padding:16px 24px;display:flex;justify-content:space-between;align-items:center}
+header h1{font-size:18px;font-weight:600}
+header .sub{font-size:11px;opacity:.85;margin-top:3px}
+.filters{background:#fff;padding:12px 24px;border-bottom:1px solid #e2e8f0;display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.filters label{font-size:11px;color:#64748b;text-transform:uppercase;font-weight:600;letter-spacing:.5px}
+.filters select,.filters input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px;background:#fff}
+main{padding:20px 24px;max-width:1400px;margin:0 auto}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:18px}
+.kpi{background:#fff;padding:14px 16px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.06);border-left:4px solid #1e3a8a;position:relative}
+.kpi.rec{border-left-color:#059669}
+.kpi.pay{border-left-color:#dc2626}
+.kpi.net{border-left-color:#7c3aed}
+.kpi .lbl{font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;font-weight:600}
+.kpi .val{font-size:22px;font-weight:700;margin-top:4px;color:#0f172a}
+.kpi .delta{font-size:11px;margin-top:4px;display:flex;gap:6px;align-items:center}
+.up{color:#059669}.down{color:#dc2626}.flat{color:#64748b}
+.kpi .sub{font-size:10px;color:#94a3b8;margin-top:2px}
+.row{display:grid;grid-template-columns:2fr 1fr;gap:16px;margin-bottom:18px}
+.row.single{grid-template-columns:1fr}
+.panel{background:#fff;border-radius:8px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.panel h2{font-size:13px;font-weight:600;color:#1e293b;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center}
+.panel h2 span.count{font-size:11px;color:#64748b;font-weight:400}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{background:#f8fafc;color:#475569;font-weight:600;text-transform:uppercase;font-size:10px;letter-spacing:.3px;padding:8px 10px;text-align:left;border-bottom:2px solid #e2e8f0;position:sticky;top:0}
+td{padding:8px 10px;border-bottom:1px solid #f1f5f9}
+tr:hover td{background:#f8fafc}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+.pos{color:#059669;font-weight:600}
+.neg{color:#dc2626;font-weight:600}
+.pill{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600}
+.p-ppd{background:#dbeafe;color:#1e40af}.p-ccx{background:#fef3c7;color:#92400e}
+.p-inco{background:#ede9fe;color:#6d28d9}
+.mrow{cursor:pointer;font-weight:600}
+.mrow:hover td{background:#eff6ff}
+.mrow td:first-child::before{content:'▶ ';color:#64748b;font-size:9px;display:inline-block;transition:transform .15s}
+.mrow.open td:first-child::before{content:'▼ '}
+.wrow td{background:#f8fafc;font-size:11px;color:#475569;padding-left:26px}
+.wrow td:first-child{padding-left:30px;font-style:italic}
+.scroll{max-height:360px;overflow-y:auto}
+.chart-wrap{height:260px;position:relative}
+.agent-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f1f5f9;font-size:12px}
+.agent-row:last-child{border:none}
+.bar{height:6px;background:#e2e8f0;border-radius:3px;margin-top:4px;overflow:hidden}
+.bar>div{height:100%;background:linear-gradient(90deg,#1e3a8a,#3730a3)}
+</style></head><body>
+
+<header>
+  <div><h1>Intercompany Receivable / Payable Monitor</h1><div class="sub">Shipment-level AR/AP across group branches · CargoWise feed</div></div>
+  <div class="sub">Printed: 06-Apr-26 08:01 · Rajni Dikshit</div>
+</header>
+
+<div class="filters">
+  <label>Branch</label>
+  <select id="fBranch"><option value="">All Branches</option></select>
+  <label>Counterparty</label>
+  <select id="fAgent"><option value="">All Agents</option></select>
+  <label>Direction</label>
+  <select id="fDir"><option>All</option><option>Import</option><option>Export</option></select>
+  <label>Period</label>
+  <select id="fPeriod"><option value="mtd">Month to Date</option><option value="ytd">Year to Date</option><option value="all" selected>All</option></select>
+</div>
+
+<main>
+  <div class="kpis" id="kpis"></div>
+
+  <div class="row">
+    <div class="panel">
+      <h2>Receivable vs Payable by Counterparty (Top 8)</h2>
+      <div class="chart-wrap"><canvas id="chartAgent"></canvas></div>
+    </div>
+    <div class="panel">
+      <h2>Net Position by Branch</h2>
+      <div class="chart-wrap"><canvas id="chartBranch"></canvas></div>
+    </div>
+  </div>
+
+  <div class="row single">
+    <div class="panel">
+      <h2>Receipts & Payments — Month on Month <span class="count">Click a month to drill into weeks</span></h2>
+      <table id="momTbl">
+        <thead><tr>
+          <th>Period</th>
+          <th class="num">Jobs</th>
+          <th class="num">Receipts</th>
+          <th class="num">Payments</th>
+          <th class="num">Net</th>
+          <th class="num">Cum. Receipts</th>
+          <th class="num">Cum. Payments</th>
+          <th class="num">Cum. Net (= Net Position)</th>
+        </tr></thead>
+        <tbody id="momBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="row single">
+    <div class="panel">
+      <h2>Shipment-Level Detail <span class="count" id="rowCount"></span></h2>
+      <div class="scroll"><table id="tbl">
+        <thead><tr>
+          <th>HBL</th><th>MBL</th><th>Branch</th><th>Service</th><th>Carrier</th>
+          <th>Load Port</th><th>Disch Port</th><th>ETD</th><th>ETA</th>
+          <th>Shipper</th><th>Consignee</th>
+          <th>Inco</th><th>M.Term</th><th>H.Term</th>
+          <th>Container</th>
+          <th class="num">Receivable</th><th class="num">Payable</th><th class="num">Net</th>
+        </tr></thead><tbody></tbody>
+      </table></div>
+    </div>
+  </div>
+</main>
+
+<script>
+// Sample data mirroring CargoWise Receivable/Payable report schema
+const branches=['Mumbai','Delhi','Chennai','Bangalore'];
+const agents=['Acme USA','Acme UK','Acme Germany','Acme Singapore','Acme Dubai','Acme China','Acme Australia','Acme Netherlands'];
+const services=['FCL','LCL','AIR','FCL','LCL'];
+const carriers=['Maersk','MSC','CMA CGM','Hapag-Lloyd','ONE','Evergreen','COSCO','Emirates SkyCargo'];
+const ports=[['Nhava Sheva','Los Angeles'],['Chennai','New York'],['Mumbai','Hamburg'],['Mundra','Jebel Ali'],['Bangalore','Singapore'],['Nhava Sheva','Frankfurt'],['Chennai','Sydney'],['Mumbai','Rotterdam']];
+const shippers=['Tata Steel','Reliance Ind','Mahindra Auto','Wipro Ltd','Infosys','Bajaj Auto','HDFC Exports','Godrej'];
+const consignees=['Walmart USA','Tesco UK','Siemens DE','NTUC SG','Carrefour DXB','COFCO CN','Woolworths AU','AH NL'];
+const incoTerms=['FOB','CIF','EXW','DAP','DDP','CFR','FCA'];
+const terms=['PPD','CCX'];
+const ctrTypes=['20GP','40GP','40HC','20RF','40HC','40GP'];
+
+function rnd(a){return a[Math.floor(Math.random()*a.length)]}
+function rint(a,b){return Math.floor(Math.random()*(b-a))+a}
+function dt(daysAgo){const d=new Date();d.setDate(d.getDate()-daysAgo);return d.toISOString().slice(0,10)}
+
+const data=[];
+for(let i=0;i<85;i++){
+  const br=rnd(branches),ag=rnd(agents),svc=rnd(services),p=rnd(ports);
+  const rec=rint(800,18000), pay=rint(400,12000);
+  const etdDays=rint(1,120);
+  const ctrCount=svc==='AIR'?0:rint(1,6);
+  const ctrType=svc==='AIR'?'-':rnd(ctrTypes);
+  data.push({
+    hbl:'HBL'+(24001+i), mbl:'MBL'+(70001+i),
+    branch:br, service:svc, carrier:rnd(carriers),
+    loadPort:p[0], dischPort:p[1],
+    agent:ag, shipper:rnd(shippers), consignee:rnd(consignees),
+    etd:dt(etdDays), eta:dt(etdDays-rint(15,35)),
+    inco:rnd(incoTerms), mTerm:rnd(terms), hTerm:rnd(terms),
+    ctrCount, ctrType,
+    rec, pay, net:rec-pay
+  });
+}
+
+// Populate filter dropdowns
+branches.forEach(b=>fBranch.insertAdjacentHTML('beforeend',`<option>${b}</option>`));
+agents.forEach(a=>fAgent.insertAdjacentHTML('beforeend',`<option>${a}</option>`));
+
+function fmt(n){return n.toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0})}
+function fmtK(n){return (n>=1000||n<=-1000)?(n/1000).toFixed(1)+'K':n.toFixed(0)}
+
+function applyFilters(){
+  const br=fBranch.value, ag=fAgent.value, per=fPeriod.value;
+  const today=new Date();
+  return data.filter(r=>{
+    if(br && r.branch!==br)return false;
+    if(ag && r.agent!==ag)return false;
+    if(per!=='all'){
+      const d=new Date(r.etd);
+      if(per==='mtd' && (d.getMonth()!==today.getMonth()||d.getFullYear()!==today.getFullYear()))return false;
+      if(per==='ytd' && d.getFullYear()!==today.getFullYear())return false;
+    }
+    return true;
+  });
+}
+
+let chartAgent, chartBranch;
+
+function render(){
+  const rows=applyFilters();
+  // KPIs with comparisons
+  const totRec=rows.reduce((s,r)=>s+r.rec,0);
+  const totPay=rows.reduce((s,r)=>s+r.pay,0);
+  const net=totRec-totPay;
+  const jobs=rows.length;
+
+  // Simulated period comparisons
+  const today=new Date();
+  const mtd=data.filter(r=>{const d=new Date(r.etd);return d.getMonth()===today.getMonth()&&d.getFullYear()===today.getFullYear()});
+  const ytd=data.filter(r=>new Date(r.etd).getFullYear()===today.getFullYear());
+  const lastPeriod=data.filter(r=>{const d=new Date(r.etd);const m=new Date();m.setMonth(m.getMonth()-1);return d.getMonth()===m.getMonth()});
+
+  const jobsDelta=lastPeriod.length?((jobs-lastPeriod.length)/lastPeriod.length*100):0;
+
+  kpis.innerHTML=`
+    <div class="kpi"><div class="lbl">Jobs (Selected)</div><div class="val">${jobs}</div>
+      <div class="delta ${jobsDelta>=0?'up':'down'}">${jobsDelta>=0?'▲':'▼'} ${Math.abs(jobsDelta).toFixed(1)}% vs last period</div>
+      <div class="sub">Last period: ${lastPeriod.length} jobs</div></div>
+    <div class="kpi"><div class="lbl">Jobs MTD</div><div class="val">${mtd.length}</div>
+      <div class="delta flat">Current month</div><div class="sub">${fmt(mtd.reduce((s,r)=>s+r.rec-r.pay,0))} net</div></div>
+    <div class="kpi"><div class="lbl">Jobs YTD</div><div class="val">${ytd.length}</div>
+      <div class="delta flat">Year to date</div><div class="sub">${fmt(ytd.reduce((s,r)=>s+r.rec-r.pay,0))} net</div></div>
+    <div class="kpi rec"><div class="lbl">Total Receivable</div><div class="val pos">${fmt(totRec)}</div>
+      <div class="delta flat">USD across ${new Set(rows.map(r=>r.agent)).size} counterparties</div></div>
+    <div class="kpi pay"><div class="lbl">Total Payable</div><div class="val neg">${fmt(totPay)}</div>
+      <div class="delta flat">USD outbound to agents</div></div>
+    <div class="kpi net"><div class="lbl">Net Position</div><div class="val ${net>=0?'pos':'neg'}">${net>=0?'+':''}${fmt(net)}</div>
+      <div class="delta ${net>=0?'up':'down'}">${net>=0?'Net receivable':'Net payable'}</div></div>`;
+
+  // Detail table
+  const tb=document.querySelector('#tbl tbody');
+  tb.innerHTML=rows.slice(0,50).map(r=>`<tr>
+    <td><strong>${r.hbl}</strong></td><td>${r.mbl}</td>
+    <td>${r.branch}</td><td>${r.service}</td><td>${r.carrier}</td>
+    <td>${r.loadPort}</td><td>${r.dischPort}</td>
+    <td>${r.etd}</td><td>${r.eta}</td>
+    <td>${r.shipper}</td><td>${r.consignee}</td>
+    <td><span class="pill p-inco">${r.inco}</span></td>
+    <td><span class="pill p-${r.mTerm.toLowerCase()}">${r.mTerm}</span></td>
+    <td><span class="pill p-${r.hTerm.toLowerCase()}">${r.hTerm}</span></td>
+    <td>${r.ctrCount>0?r.ctrCount+' × '+r.ctrType:'—'}</td>
+    <td class="num pos">${fmt(r.rec)}</td>
+    <td class="num neg">${fmt(r.pay)}</td>
+    <td class="num ${r.net>=0?'pos':'neg'}">${fmt(r.net)}</td>
+  </tr>`).join('');
+  rowCount.textContent=`· ${rows.length} shipments (showing ${Math.min(50,rows.length)})`;
+
+  // Agent chart
+  const byAgent={};
+  rows.forEach(r=>{if(!byAgent[r.agent])byAgent[r.agent]={rec:0,pay:0};byAgent[r.agent].rec+=r.rec;byAgent[r.agent].pay+=r.pay});
+  const topAgents=Object.entries(byAgent).sort((a,b)=>(b[1].rec+b[1].pay)-(a[1].rec+a[1].pay)).slice(0,8);
+
+  if(chartAgent)chartAgent.destroy();
+  chartAgent=new Chart(document.getElementById('chartAgent'),{
+    type:'bar',
+    data:{labels:topAgents.map(x=>x[0]),datasets:[
+      {label:'Receivable',data:topAgents.map(x=>x[1].rec),backgroundColor:'#059669'},
+      {label:'Payable',data:topAgents.map(x=>x[1].pay),backgroundColor:'#dc2626'}
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',
+      scales:{x:{ticks:{callback:v=>fmtK(v)}},y:{ticks:{font:{size:10}}}},
+      plugins:{legend:{position:'bottom',labels:{font:{size:10}}}}}
+  });
+
+  // Branch chart
+  const byBranch={};
+  rows.forEach(r=>{byBranch[r.branch]=(byBranch[r.branch]||0)+r.net});
+  if(chartBranch)chartBranch.destroy();
+  chartBranch=new Chart(document.getElementById('chartBranch'),{
+    type:'bar',
+    data:{labels:Object.keys(byBranch),datasets:[{
+      label:'Net',data:Object.values(byBranch),
+      backgroundColor:Object.values(byBranch).map(v=>v>=0?'#059669':'#dc2626')
+    }]},
+    options:{responsive:true,maintainAspectRatio:false,
+      scales:{y:{ticks:{callback:v=>fmtK(v)}}},
+      plugins:{legend:{display:false}}}
+  });
+}
+
+['fBranch','fAgent','fDir','fPeriod'].forEach(id=>document.getElementById(id).onchange=render);
+
+function buildMoM(rows){
+  // Group by YYYY-MM, then by ISO week within month
+  const months={};
+  rows.forEach(r=>{
+    const d=new Date(r.etd);
+    const mKey=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+    const mLabel=d.toLocaleString('en-US',{month:'long',year:'numeric'});
+    // week of month
+    const wk='W'+Math.ceil((d.getDate()+new Date(d.getFullYear(),d.getMonth(),1).getDay())/7);
+    if(!months[mKey])months[mKey]={label:mLabel,jobs:0,rec:0,pay:0,ar:0,ap:0,weeks:{}};
+    const m=months[mKey];
+    m.jobs++; m.rec+=r.rec; m.pay+=r.pay;
+    // Simulate: ~70% collected, rest outstanding AR; ~65% paid, rest outstanding AP
+    m.ar+=r.rec*0.30; m.ap+=r.pay*0.35;
+    if(!m.weeks[wk])m.weeks[wk]={jobs:0,rec:0,pay:0,ar:0,ap:0};
+    const w=m.weeks[wk];
+    w.jobs++; w.rec+=r.rec; w.pay+=r.pay; w.ar+=r.rec*0.30; w.ap+=r.pay*0.35;
+  });
+  return Object.entries(months).sort((a,b)=>b[0].localeCompare(a[0]));
+}
+
+function renderMoM(rows){
+  const months=buildMoM(rows);
+  const body=document.getElementById('momBody');
+  if(months.length===0){body.innerHTML='<tr><td colspan="8" style="text-align:center;color:#94a3b8;padding:20px">No data for selected filters</td></tr>';return;}
+  // Compute cumulative oldest→newest from actual Receipts/Payments
+  const chrono=[...months].sort((a,b)=>a[0].localeCompare(b[0]));
+  let cRec=0,cPay=0;
+  chrono.forEach(([k,m])=>{
+    cRec+=m.rec; cPay+=m.pay;
+    m.cRec=cRec; m.cPay=cPay;
+    // Weeks cumulative picks up from prior month close
+    let wRec=cRec-m.rec, wPay=cPay-m.pay;
+    Object.entries(m.weeks).sort().forEach(([wk,w])=>{
+      wRec+=w.rec; wPay+=w.pay;
+      w.cRec=wRec; w.cPay=wPay;
+    });
+  });
+  body.innerHTML=months.map(([k,m])=>{
+    const net=m.rec-m.pay, cNet=m.cRec-m.cPay;
+    const weekRows=Object.entries(m.weeks).sort().map(([wk,w])=>{
+      const wnet=w.rec-w.pay, wcNet=w.cRec-w.cPay;
+      return `<tr class="wrow" data-m="${k}" style="display:none">
+        <td>${wk}</td>
+        <td class="num">${w.jobs}</td>
+        <td class="num pos">${fmt(w.rec)}</td>
+        <td class="num neg">${fmt(w.pay)}</td>
+        <td class="num ${wnet>=0?'pos':'neg'}">${fmt(wnet)}</td>
+        <td class="num">${fmt(w.cRec)}</td>
+        <td class="num">${fmt(w.cPay)}</td>
+        <td class="num ${wcNet>=0?'pos':'neg'}">${fmt(wcNet)}</td>
+      </tr>`;
+    }).join('');
+    return `<tr class="mrow" data-m="${k}">
+      <td>${m.label}</td>
+      <td class="num">${m.jobs}</td>
+      <td class="num pos">${fmt(m.rec)}</td>
+      <td class="num neg">${fmt(m.pay)}</td>
+      <td class="num ${net>=0?'pos':'neg'}">${fmt(net)}</td>
+      <td class="num" style="background:#f0fdf4">${fmt(m.cRec)}</td>
+      <td class="num" style="background:#fef2f2">${fmt(m.cPay)}</td>
+      <td class="num ${cNet>=0?'pos':'neg'}" style="background:#f5f3ff;font-weight:700">${fmt(cNet)}</td>
+    </tr>${weekRows}`;
+  }).join('');
+  // Bind drill toggles
+  body.querySelectorAll('.mrow').forEach(tr=>{
+    tr.onclick=()=>{
+      tr.classList.toggle('open');
+      const key=tr.dataset.m;
+      body.querySelectorAll(`.wrow[data-m="${key}"]`).forEach(wr=>{
+        wr.style.display=tr.classList.contains('open')?'':'none';
+      });
+    };
+  });
+}
+
+// Hook into existing render
+const _origRender=render;
+render=function(){_origRender();renderMoM(applyFilters());};
+render();
+</script></body></html>
